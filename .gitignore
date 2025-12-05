@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+*.egg-info/
+.env
+config.ini
+outputs/
+*.mp3
+*.wav
+.pytest_cache/
+.coverage
+htmlcov/

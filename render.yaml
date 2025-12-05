@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: podcast-generator-backend
+    env: python
+    region: singapore
+    plan: free
+    buildCommand: pip install -r requirements.txt && playwright install chromium
+    startCommand: uvicorn api_main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: BOCHA_API_KEY
+        sync: false
+      - key: TENCENT_SECRET_ID
+        sync: false
+      - key: TENCENT_SECRET_KEY
+        sync: false
