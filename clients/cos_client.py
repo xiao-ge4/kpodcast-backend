@@ -38,7 +38,8 @@ class COSClient:
             SecretId=secret_id,
             SecretKey=secret_key,
             Token=None,
-            Scheme='https'
+            Scheme='https',
+            Timeout=120  # 增加超时时间到 120 秒
         )
         self.client = CosS3Client(config)
         logger.info(f"COS 客户端初始化成功: bucket={bucket}, region={region}")
