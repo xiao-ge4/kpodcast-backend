@@ -9,9 +9,11 @@ venv/
 *.egg-info/
 .env
 config.ini
+render_env.txt
 outputs/
 *.mp3
 *.wav
 .pytest_cache/
 .coverage
 htmlcov/
+.hypothesis/

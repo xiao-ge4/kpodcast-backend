@@ -28,7 +28,8 @@ def detect_content_style(text: str, cfg: Dict[str, Any]) -> str:
         cfg: 配置信息
     
     返回:
-        风格名称: 'chengzhang', 'kejigan', 'shangye', 'yingshi', 'zhichang' 或 'tongyong'
+        风格代码: 'tech', 'business', 'life', 'culture', 'entertainment', 
+                 'education', 'health', 'emotion', 'growth' 或 'general'
     """
     # 初始化LLM客户端
     api = HunyuanAPIClient(
@@ -45,17 +46,21 @@ def detect_content_style(text: str, cfg: Dict[str, Any]) -> str:
     prompt = f"""
 请判断以下内容最适合哪个类别，只回答类别名称，不要解释：
 
-{text}
+{text[:2000]}
 
 可选类别：
-1. 成长（个人发展、自我提升、心理健康）
-2. 科技（技术、创新、数字产品、IT）
-3. 商业（经济、创业、投资、市场营销）
-4. 影视（电影、电视、娱乐、艺术）
-5. 职场（工作、职业发展、团队管理）
+1. 科技（技术、创新、数字产品、IT、人工智能、编程）
+2. 商业（经济、创业、投资、市场营销、财经、金融）
+3. 生活（日常、美食、旅行、家居、生活方式）
+4. 文化（历史、艺术、文学、传统、人文）
+5. 娱乐（电影、电视、音乐、游戏、综艺、轻松话题）
+6. 教育（学习、考试、技能培训、知识科普）
+7. 健康（养生、医疗、运动、饮食健康、心理健康）
+8. 情感（恋爱、婚姻、人际关系、心理咨询）
+9. 成长（个人发展、自我提升、职业规划、励志）
 
 如果不属于以上任何类别，请回答"通用"。
-请只回答一个词：成长、科技、商业、影视、职场或通用。
+请只回答一个词：科技、商业、生活、文化、娱乐、教育、健康、情感、成长或通用。
     """
     
     messages = [
@@ -71,29 +76,42 @@ def detect_content_style(text: str, cfg: Dict[str, Any]) -> str:
             msg = choices[0].get("Message") or choices[0].get("message") or {}
             content = msg.get("Content") or msg.get("content") or ""
         
-        # 将中文回答映射到文件名
+        # 将中文回答映射到风格代码
         style_map = {
-            "成长": "chengzhang",
-            "科技": "kejigan",
-            "商业": "shangye",
-            "影视": "yingshi",
-            "职场": "zhichang",
-            "通用": "tongyong"
+            "科技": "tech",
+            "商业": "business",
+            "财经": "business",
+            "生活": "life",
+            "日常": "life",
+            "文化": "culture",
+            "历史": "culture",
+            "娱乐": "entertainment",
+            "轻松": "entertainment",
+            "教育": "education",
+            "学习": "education",
+            "健康": "health",
+            "养生": "health",
+            "情感": "emotion",
+            "心理": "emotion",
+            "成长": "growth",
+            "个人成长": "growth",
+            "通用": "general"
         }
         
         # 提取关键词并映射
         for key, value in style_map.items():
             if key in content:
+                print(f"检测到内容风格: {key} -> {value}")
                 return value
         
         # 默认返回通用
-        return "tongyong"
+        return "general"
     except Exception as e:
         print(f"LLM调用失败: {e}")
-        return "tongyong"
+        return "general"
 
 
-def ui_run(mode, query, instruction, url, doc, pdf_files, style, intro_style, tts_speed_val=0, voice_a=None, voice_b=None, auto_detect=False):
+def ui_run(mode, query, instruction, url, doc, pdf_files, style, intro_style, custom_intro_script, custom_intro_bgm, tts_speed_val=0, voice_a=None, voice_b=None, auto_detect=False, host_mode="dual"):
     try:
         # 重置全局变量
         global pdf_documents_global
@@ -195,8 +213,27 @@ def ui_run(mode, query, instruction, url, doc, pdf_files, style, intro_style, tt
                 print(traceback.format_exc())
                 return None, f"错误：处理PDF文件时出错 - {e}", []
         
-        # 如果启用自动检测，根据内容判断片头风格
-        if auto_detect:
+        # 处理自定义片头BGM文件路径
+        custom_bgm_path = None
+        if intro_style == "custom" and custom_intro_bgm is not None:
+            # 获取上传的BGM文件路径
+            if isinstance(custom_intro_bgm, str):
+                custom_bgm_path = custom_intro_bgm
+            elif hasattr(custom_intro_bgm, 'name'):
+                custom_bgm_path = custom_intro_bgm.name
+            print(f"自定义片头BGM文件: {custom_bgm_path}")
+        
+        # 验证自定义片头文案
+        if intro_style == "custom":
+            if not custom_intro_script or not custom_intro_script.strip():
+                return None, "错误：请输入自定义片头文案", []
+            # 检查字数限制
+            total_chars = len(custom_intro_script.replace('\n', '').replace(' ', ''))
+            if total_chars > 200:
+                return None, f"错误：片头文案超过200字限制（当前{total_chars}字）", []
+        
+        # 如果启用自动检测且不是自定义模式，根据内容判断片头风格
+        if auto_detect and intro_style != "custom":
             if mode == "Query":
                 detected_style = detect_content_style(query, cfg)
             elif mode == "URL":
@@ -216,10 +253,14 @@ def ui_run(mode, query, instruction, url, doc, pdf_files, style, intro_style, tt
             # 修改文档模式的处理逻辑
             if mode == "Query":
                 res = run_end_to_end("query", query, style=style, intro_style=intro_style, speed=tts_speed_val,
-                                    voice_a=voice_a, voice_b=voice_b, instruction=instruction)
+                                    voice_a=voice_a, voice_b=voice_b, instruction=instruction, host_mode=host_mode,
+                                    custom_intro_script=custom_intro_script if intro_style == "custom" else None,
+                                    custom_intro_bgm=custom_bgm_path)
             elif mode == "URL":
                 res = run_end_to_end("url", url, style=style, intro_style=intro_style, speed=tts_speed_val,
-                                    voice_a=voice_a, voice_b=voice_b, instruction=instruction)
+                                    voice_a=voice_a, voice_b=voice_b, instruction=instruction, host_mode=host_mode,
+                                    custom_intro_script=custom_intro_script if intro_style == "custom" else None,
+                                    custom_intro_bgm=custom_bgm_path)
             else:  # 文档模式
                 # 如果是PDF文件上传，使用提取的主题作为标题
                 if 'topic_or_url_or_text' in locals() and isinstance(topic_or_url_or_text, str) and topic_or_url_or_text:
@@ -242,7 +283,9 @@ def ui_run(mode, query, instruction, url, doc, pdf_files, style, intro_style, tt
                     
                     # 调用原始的run_end_to_end函数，但在返回结果中替换sources
                     res = run_end_to_end("doc", doc, style=style, intro_style=intro_style, speed=tts_speed_val,
-                                    voice_a=voice_a, voice_b=voice_b, instruction=enhanced_instruction)
+                                    voice_a=voice_a, voice_b=voice_b, instruction=enhanced_instruction, host_mode=host_mode,
+                                    custom_intro_script=custom_intro_script if intro_style == "custom" else None,
+                                    custom_intro_bgm=custom_bgm_path)
                     
                     # 将原始的sources保存下来，作为补充资料
                     supplementary_sources = [s for s in res.get("sources", []) if not s.get("is_primary", False)]
@@ -278,7 +321,9 @@ def ui_run(mode, query, instruction, url, doc, pdf_files, style, intro_style, tt
                 else:
                     # 如果没有上传的PDF文档，使用原始的方式处理
                     res = run_end_to_end("doc", doc, style=style, intro_style=intro_style, speed=tts_speed_val,
-                                    voice_a=voice_a, voice_b=voice_b, instruction=enhanced_instruction)
+                                    voice_a=voice_a, voice_b=voice_b, instruction=enhanced_instruction, host_mode=host_mode,
+                                    custom_intro_script=custom_intro_script if intro_style == "custom" else None,
+                                    custom_intro_bgm=custom_bgm_path)
             
             # 证据展示（DataFrame 需要二维数组/表格）
             rows = []
@@ -323,13 +368,65 @@ with gr.Blocks(title="播客生成器") as demo:
             pdf_files = gr.File(label="上传PDF文件", file_types=[".pdf"], file_count="multiple", visible=False)
             
             # 共用设置组件
+            host_mode = gr.Radio(["dual", "single"], value="dual", label="主持人模式", info="双人播客(对话式) / 单人播客(独白式)")
             style = gr.Dropdown(["news", "history", "science", "business"], value="news", label="题材模板")
-            intro_style = gr.Dropdown(["chengzhang", "kejigan", "shangye", "yingshi", "zhichang", "tongyong"], value="tongyong", label="片头风格", info="选择播客片头风格")
-            auto_detect = gr.Checkbox(label="自动检测片头风格", value=False, info="启用后，将根据内容自动选择合适的片头风格")
+            intro_style = gr.Dropdown(
+                choices=[
+                    ("科技", "tech"),
+                    ("商业/财经", "business"),
+                    ("生活/日常", "life"),
+                    ("文化/历史", "culture"),
+                    ("娱乐/轻松", "entertainment"),
+                    ("教育/学习", "education"),
+                    ("健康/养生", "health"),
+                    ("情感/心理", "emotion"),
+                    ("个人成长", "growth"),
+                    ("通用", "general"),
+                    ("自定义", "custom"),
+                ],
+                value="general",
+                label="片头风格",
+                info="选择播客片头风格，片头语音将使用您选择的音色动态生成"
+            )
+            # 自定义片头文案输入框（默认隐藏）
+            custom_intro_script = gr.Textbox(
+                label="自定义片头文案",
+                placeholder="每行一句，双人模式下奇数行为A、偶数行为B\n例如：\n欢迎收听本期节目\n今天我们来聊一个有趣的话题",
+                lines=4,
+                max_lines=8,
+                visible=False,
+                info="建议不超过200字"
+            )
+            # 自定义BGM上传（默认隐藏）
+            custom_intro_bgm = gr.File(
+                label="自定义片头背景音乐（可选）",
+                file_types=[".mp3", ".wav", ".m4a"],
+                file_count="single",
+                visible=False
+            )
+            auto_detect = gr.Checkbox(label="自动检测片头风格", value=False, info="启用后，将根据内容自动选择合适的片头风格（自定义模式下不生效）")
             tts_speed = gr.Slider(minimum=-2, maximum=2, value=0, step=1, label="语速(-2慢 ~ 2快)")
             with gr.Row():
-                voice_a = gr.Dropdown(choices=_choices, label="角色A音色", value=_choices[0] if _choices else None)
-                voice_b = gr.Dropdown(choices=_choices, label="角色B音色", value=(_choices[1] if len(_choices)>1 else (_choices[0] if _choices else None)))
+                voice_a = gr.Dropdown(choices=_choices, label="主持人音色", value=_choices[0] if _choices else None)
+                voice_b = gr.Dropdown(choices=_choices, label="主持人B音色", value=(_choices[1] if len(_choices)>1 else (_choices[0] if _choices else None)), visible=True)
+            
+            # 主持人模式切换时更新音色选择器可见性
+            def update_voice_visibility(host_mode_value):
+                if host_mode_value == "single":
+                    return gr.update(visible=False)
+                else:
+                    return gr.update(visible=True)
+            
+            host_mode.change(update_voice_visibility, inputs=[host_mode], outputs=[voice_b])
+            
+            # 片头风格切换时显示/隐藏自定义输入框
+            def update_custom_intro_visibility(intro_style_value):
+                if intro_style_value == "custom":
+                    return gr.update(visible=True), gr.update(visible=True)
+                else:
+                    return gr.update(visible=False), gr.update(visible=False)
+            
+            intro_style.change(update_custom_intro_visibility, inputs=[intro_style], outputs=[custom_intro_script, custom_intro_bgm])
             btn = gr.Button("开始生成", variant="primary")
             
             # 添加模式切换时的显示/隐藏逻辑
@@ -351,7 +448,7 @@ with gr.Blocks(title="播客生成器") as demo:
             transcript = gr.Textbox(label="逐字稿", lines=20)
             refs = gr.Dataframe(headers=["index","title","url","snippet"], label="参考资料", wrap=True)
 
-    btn.click(ui_run, inputs=[mode, query, instruction, url, doc, pdf_files, style, intro_style, tts_speed, voice_a, voice_b, auto_detect], outputs=[audio, transcript, refs])
+    btn.click(ui_run, inputs=[mode, query, instruction, url, doc, pdf_files, style, intro_style, custom_intro_script, custom_intro_bgm, tts_speed, voice_a, voice_b, auto_detect, host_mode], outputs=[audio, transcript, refs])
     
     gr.Markdown("""
     ### 输入类型说明
@@ -367,12 +464,17 @@ with gr.Blocks(title="播客生成器") as demo:
     - 语言指令：“Generate in English”、“使用英文”
     
     ### 片头风格说明
-    - **成长**：个人发展、自我提升、心理健康相关内容
-    - **科技**：技术、创新、数字产品、IT相关内容
-    - **商业**：经济、创业、投资、市场营销相关内容
-    - **影视**：电影、电视、娱乐、艺术相关内容
-    - **职场**：工作、职业发展、团队管理相关内容
-    - **通用**：不属于以上类别的通用内容
+    片头语音将使用您选择的主持人音色动态生成，确保片头和正文音色一致。
+    - **科技**：技术、创新、AI、编程相关内容
+    - **商业/财经**：经济、创业、投资、金融相关内容
+    - **生活/日常**：美食、旅行、家居、生活方式相关内容
+    - **文化/历史**：历史、艺术、文学、人文相关内容
+    - **娱乐/轻松**：电影、音乐、游戏、综艺相关内容
+    - **教育/学习**：学习、考试、技能培训、知识科普相关内容
+    - **健康/养生**：医疗、运动、饮食健康相关内容
+    - **情感/心理**：恋爱、婚姻、人际关系相关内容
+    - **个人成长**：自我提升、职业规划、励志相关内容
+    - **通用**：不属于以上类别的通用内容（仅播放背景音乐，无语音片头）
     
     勾选“自动检测片头风格”后，系统将根据内容自动选择最合适的片头风格。
     """)
