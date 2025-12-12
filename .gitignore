@@ -11,8 +11,12 @@ venv/
 config.ini
 render_env.txt
 outputs/
+# 排除生成的音频，但保留 assets 目录下的样本
 *.mp3
 *.wav
+!assets/**/*.mp3
+!assets/**/*.wav
+!assets/**/*.MP3
 .pytest_cache/
 .coverage
 htmlcov/
